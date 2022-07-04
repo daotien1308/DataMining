@@ -33,7 +33,7 @@
 
 - Chia tập train, tập test tỷ lệ 75% train và 25% test
 - Trên tập train sẽ thử các thuật toán:
-  + Knn
+  + KNN
   + Random Forest
   + Logistic Regression
 - Phương pháp sử dụng: K-fold Cross Validate
