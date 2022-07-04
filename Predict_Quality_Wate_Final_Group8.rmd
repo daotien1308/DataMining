@@ -1,0 +1,333 @@
+---
+title: "DoAnDMining_final"
+author: "Nhóm 8"
+date: "4/17/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Predict Water Quality
+
+
+## Thành Viên:
+ + Nguyễn Anh Đắc		    19133020
+ + Nguyễn Thanh Tân Kỷ	19133031
+ + Lại Hữu Trác			    19133059
+ + Đào Thị Cẩm Tiên		  19133055
+
+## Giới Thiệu
+- Tiếp cận nước uống an toàn là điều cần thiết đối với sức khỏe, một quyền cơ bản của con người và là một thành phần của chính sách hiệu quả để bảo vệ sức khỏe. 
+- Đây là vấn đề quan trọng như một vấn đề sức khỏe và phát triển ở cấp quốc gia, khu vực và địa phương. 
+Ở một số vùng, người ta đã chỉ ra rằng các khoản đầu tư vào cấp nước và vệ sinh có thể mang lại lợi ích kinh tế ròng, vì việc giảm các tác động xấu đến sức khỏe và chi phí chăm sóc sức khoẻ lớn hơn chi phí thực hiện các can thiệp.
+
+## Data
+- Dữ liệu chứa các chỉ số chất lượng nước, gồm 10 cột và 3276 dòng
+- Các cột trong tập dữ liệu:
+  + pH value: Độ pH của nước. WHO đã khuyến cáo giới hạn pH tối đa cho phép từ 6,5 đến 8,5
+  + Hardness(mg/l): Độ cứng của nước. Độ cứng của nước được định nghĩa đơn giản nhất là loại nước có tổng lượng muối Ca và Mg được hòa tan trong nước vượt qua mức cho phép
+  + Solids (Total dissolved solids - TDS): Tổng chất rắn hoà tan trong nước. giới hạn mong muốn cho TDS là 500 mg / l và giới hạn tối đa là 1000 mg / l được quy định cho mục đích uống	
+  + Chloramines: Mức clo lên đến 4 miligam mỗi lít (mg / L hoặc 4 phần triệu (ppm)) được coi là an toàn trong nước uống
+  + Sulfate: lượng sulfate trong nước
+  + Conductivity: tính dẫn điện. 
+  + Organic_carbon: lượng cacbon hữu cơ trong nước
+  + Trihalomethanes: lượng THM trong nước. Đây là sản phẩm phụ của quá trình khử trùng nước bằng Chlorine.
+  + Turbidity: Độ đục của nước
+  + Potability: Cho biết liệu nước có an toàn cho con người hay không, trong đó 1 nghĩa là Uống được và 0 nghĩa là Không uống được
+  
+  
+  
+## Kế Hoạch Phân Tích
+
+- Nhóm đặt ra câu hỏi nghiên cứu chung là tìm ra các yếu tố ảnh hưởng tới chất lượng nước: Dự đoán chất lượng nước (1: an toàn, 0: không an toàn)
+- Dự đoán:
+  + Input: pH, Hardness, Solids, Chloramines, Sulfate, Conductivity, Organic_carbon, Trihalomethanes, Turbidity.
+  + Output: Potability.
+
+- Chia tập train, tập test tỷ lệ 75% train và 25% test
+- Trên tập train sẽ thử các thuật toán:
+  + Knn
+  + Random Forest
+  + Logistic Regression
+- Phương pháp sử dụng: K-fold Cross Validate
+- Lựa chọn mô hình cho kết quả tốt nhất.
+- Đánh giá mô hình trên tập test.
+
+
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(corrplot)
+library(reshape2)
+```
+
+
+- Đọc file .csv
+```{r}
+
+df<- read.csv("Data/water_potability.csv")
+
+```
+- 6 dòng đầu
+```{r}
+head(df)
+
+```
+
+- 6 dòng cuối
+```{r}
+tail(df)
+
+```
+
+
+```{r}
+#So Dong & Cot
+dim(df)
+```
+
+```{r}
+str(df)
+```
+```{r}
+summary(df)
+```
+
+```{r}
+#xử lý giá trị NA bằng cách thay bằng giá trị mean
+df <- df %>%  
+  group_by(Potability) %>%
+  mutate_at(vars(-c("Potability")),~ifelse(is.na(.), mean(., na.rm = TRUE), .))
+summary(df)
+```
+
+```{r}
+sum(is.na(df))
+```
+```{r}
+head(df)
+```
+
+## EDA
+```{r}
+corrplot(cor(df), method = 'color', order = 'alphabet')
+```
+- Dựa vào biểu đồ corrplot ở trên ta có thể thấy sự tương quan giữa các biển với nhau:
+  + Mức độ tương quan giữa các biến cũng không quá rõ rệt, tiêu biểu ở 1 số biển như:
+    + Hardness và ph có mức độ tương quan khá tích cực khoảng 0.2
+    + Solids và sulfate có mực độ tương quan tiêu cực khoảng -0.2
+
+### Biểu đồ Histogram
+
+```{r}
+melt(df) %>% ggplot(aes(value)) + 
+  geom_histogram() + 
+  facet_wrap(~ variable, scales="free")
+```
+- Với biểu đồ histogram ở trên chúng ta có thể thấy sự phân bố số liệu của các biển có trong tập dữ liệu:
+  + Với biểu đồ của 3 biến ph, sulfate, Trihalomethanes chúng ta có thể thấy có sự phân bố không đồng đều, đây là hậu quả của việc quá nhiều giá trị NA và sau khi ta thấy giấ trị mean vào.
+
+## Predict_Quality_Water
+```{r}
+df$Potability <- factor(df$Potability)
+library(randomForest)
+```
+
+## 
+- Chúng ta sẽ thực hiện thao tác chia dữ liệu theo phương pháp chia phân tầng
+```{r}
+library(caret)
+
+set.seed(222) 
+
+index <- createDataPartition(y = df$Potability, p = 0.75, list = FALSE)
+training <- df[index, ]
+testing <- df[-index, ]
+
+
+```
+
+  
+
+### Biểu đồ Boxplot
+```{r}
+melt(df) %>% ggplot(aes(variable,value)) + 
+  geom_boxplot(alpha = .5, fill = "red") + 
+  facet_wrap( ~ variable, scales="free")
+```
+- Với biểu đồ boxplot thì chúng ta có thể thấy sự xuất hiện của các outlier của các biển và nó khá nhiều. Nó có thể ảnh hưởng đến kết quả training của 1 số model như knn nên nhóm sẽ quyết định xử lý các outlier này.
+
+#### Xử lý giá trị outlier
+```{r}
+datatrain<-training
+#ph
+Q1 <- quantile(datatrain$ph, .45)
+Q3 <- quantile(datatrain$ph, .55)
+IQR <- IQR(datatrain$ph)
+no_outliers1 <- subset(datatrain, datatrain$ph> (Q1 - 1.5*IQR) & datatrain$ph< (Q3 + 1.5*IQR))
+#Hardness
+Q1 <- quantile(no_outliers1$Hardness, .35)
+Q3 <- quantile(no_outliers1$Hardness, .65)
+IQR <- IQR(no_outliers1$Hardness)
+no_outliers2 <- subset(no_outliers1, no_outliers1$Hardness> (Q1 - 1.5*IQR) & no_outliers1$Hardness< (Q3 + 1.5*IQR))
+#Solids
+Q1 <- quantile(no_outliers2$Solids, .35)
+Q3 <- quantile(no_outliers2$Solids, .65)
+IQR <- IQR(no_outliers2$Solids)
+no_outliers3 <- subset(no_outliers2, no_outliers2$Solids> (Q1 - 1.5*IQR) & no_outliers2$Solids< (Q3 + 1.5*IQR))
+#Chloramines
+Q1 <- quantile(no_outliers3$Chloramines, .35)
+Q3 <- quantile(no_outliers3$Chloramines, .65)
+IQR <- IQR(no_outliers3$Chloramines)
+no_outliers4 <- subset(no_outliers3, no_outliers3$Chloramines> (Q1 - 1.5*IQR) & no_outliers3$Chloramines< (Q3 + 1.5*IQR))
+#Sulfate
+Q1 <- quantile(no_outliers4$Sulfate, .50)
+Q3 <- quantile(no_outliers4$Sulfate, .50)
+IQR <- IQR(no_outliers4$Sulfate)
+no_outliers5 <- subset(no_outliers4, no_outliers4$Sulfate> (Q1 - 1.5*IQR) & no_outliers4$Sulfate< (Q3 + 1.5*IQR))
+#Conductivity
+Q1 <- quantile(no_outliers5$Conductivity, .25)
+Q3 <- quantile(no_outliers5$Conductivity, .75)
+IQR <- IQR(no_outliers5$Conductivity)
+no_outliers6 <- subset(no_outliers5, no_outliers5$Conductivity> (Q1 - 1.5*IQR) & no_outliers5$Conductivity< (Q3 + 1.5*IQR))
+#Organic_carbon
+Q1 <- quantile(no_outliers6$Organic_carbon, .25)
+Q3 <- quantile(no_outliers6$Organic_carbon, .75)
+IQR <- IQR(no_outliers6$Organic_carbon)
+no_outliers7 <- subset(no_outliers6, no_outliers6$Organic_carbon> (Q1 - 1.5*IQR) & no_outliers6$Organic_carbon< (Q3 + 1.5*IQR))
+#Trihalomethanes
+Q1 <- quantile(no_outliers7$Trihalomethanes, .35)
+Q3 <- quantile(no_outliers7$Trihalomethanes, .65)
+IQR <- IQR(no_outliers7$Trihalomethanes)
+no_outliers8 <- subset(no_outliers7, no_outliers7$Trihalomethanes> (Q1 - 1.5*IQR) & no_outliers7$Trihalomethanes< (Q3 + 1.5*IQR))
+#Turbidity
+Q1 <- quantile(no_outliers8$Turbidity, .25)
+Q3 <- quantile(no_outliers8$Turbidity, .75)
+IQR <- IQR(no_outliers8$Turbidity)
+no_outliers9 <- subset(no_outliers8, no_outliers8$Turbidity> (Q1 - 1.5*IQR) & no_outliers8$Turbidity< (Q3 + 1.5*IQR))
+datatrain_knn <- no_outliers9
+datatrain_lr <- no_outliers9
+```
+
+### Biểu đồ boxplot sau khi xử lý các outlier
+```{r}
+melt(no_outliers9) %>% ggplot(aes(variable,value)) + 
+  geom_boxplot(alpha = .5, fill = "red") + 
+  facet_wrap( ~ variable, scales="free")
+```
+- Biểu đô boxplot ở trên là biểu đồ sau khi nhóm đã thực hiện xử lý các outliers. Nhưng vẫn còn sót lại 1 số outliers ở biến sulfate. Có thể là do ở biến này các outliers xuất hiện quá nhiều nên thành ra không thể xóa hết được, hoặc là mình sử dụng phép tính chưa tối ưu, nhưng chắc sẽ không ảnh hưởng quá nhiều đến kết quả training model.
+
+
+## Random Forest
+- Phương pháp chúng ta sử dụng là k-fold cross validate, cụ thể chúng ta sẽ chia dữ liệu thành 5 phần, chọn một phần trong 5 phần đó làm tập test,và thực hiện train các phần còn lại, lặp lại việc chọn tập test như vậy cho đến khi đủ 5 lần.
+- chúng ta sẽ thay đổi các tham số ntree và mtry với ntree= [50,100,250,500], mtry= [2,3,4]
+ sau khi train thì với ntree = 500 và mtry = 3 thì mô hình cho kết quả chính xác cao nhất.
+ 
+```{r}
+set.seed(122)
+trControl <- trainControl(method = "repeatedcv", number = 5, repeats =  3 )
+tunegrid = expand.grid(mtry = c(2:4))
+potability_rf <- train(Potability ~., data = training, method = 'rf', tuneGrid = tunegrid,ntree=500, trControl = trControl)
+potability_rf
+
+```
+- Dưới đây là độ quan trọng của các biến ctheo thứ tự giảm dần là sulfate, ph, solids, Chloramines	,Hardness, Trihalomethanes, Conductivity, Organic_carbon,Turbidity.
+```{r}
+varImp(potability_rf)
+```
+
+```{r}
+t <- tuneRF(training[,-10], training$Potability, stepFactor = 1.5, plot = TRUE)
+```
+- Nhìn vào biểu đồ thì chúng ta thấy tham số mtry tốt nhất của mô hình là 3. Và chúng ta sẽ chọn nó để train mô hình.
+
+```{r}
+potability_rf
+```
+- Nhận xét: với mô hình Random Forest cho độ chính xác accurancy là khoảng 79%, giá trị chưa thực sự quá tốt, chúng ta sẽ tiếp tục thử nghiệm với mô hình khác.
+
+## KNN
+
+
+```{r}
+
+tuneGrid <- expand.grid(k = seq(101,131, by = 2))
+
+#Mô hình knn
+knn <- train(Potability ~., data = datatrain_knn, method = 'knn', tuneGrid = tuneGrid, trControl = trControl)
+knn
+```
+- Với mô hình KNN cho độ chính xác accurancy là khoảng 63%, giá trị thực sự chưa tốt, chúng ta sẽ tiếp tục thử nghiệm với mô hình khác.
+
+
+```{r}
+plot(knn)
+```
+
+
+
+
+## Mô Hình Logistic Regression 
+- Dựa vào độ quan trọng của các biến dữ đoán biết ở trên thì chúng ta sẽ lược bỏ một số biến ít quan trọng giảm độ phức tạp của mô hình. Cụ thể ở đây chúng ta sẽ chọn 5 biến để dự đoán :"ph", "Solids","Sulfate","Chloramines","Hardness".
+- Vì các biến này đều là biến số và giá trị trung bình của một số biến có chênh lêch khá lớn nên chúng ta sẽ thực hiện scale các biến này để giảm sự chênh lệch, và tránh việc mô hình phụ thuộc quá vào 1 số biến khi giá trị nó quá lớn.
+```{r}
+# Logistic regression
+set.seed(1)
+
+datatrain <- datatrain_lr %>% mutate_at(c("ph", "Solids","Sulfate","Chloramines","Hardness"), ~(scale(.)))
+datatrain
+
+#train
+potability_lr <- train(Potability ~ ph+ Sulfate+ Solids+ Chloramines+ Hardness, method = "glm", data = datatrain_lr, 
+                      trControl = trainControl(method = 'repeatedcv', number = 10, repeats = 3))
+potability_lr
+
+```
+- Nhận xét: với mô hình Logistic Regression cho độ chính xác accurancy là 63.3%, giá trị này khá thấp.
+
+## So Sánh Giữa Các Mô Hình
+- Sau khi thực hiện train 3 mô hình ở trên và chúng ta thu được kết quả như sau:
+  + Mô hình KNN với accurancy là 63.3%
+  + Mô hình Random Forest với accurancy là 79.8%
+  + Mô hình Logistic Regression với accurancy là 63.3%
+- Nhận xét: 
+  + Độ chính xác vẫn chưa quá tốt, như chúng ta thấy với mô hình Random Forest cho được độ chính xác cao nhất khoảng 80%. Do đó chúng ta sẽ lựa chọn mô hình này để dự đoán trên tập test.
+
+## Thực Hiện Dự Đoán Trên Tập Test
+
+- Tiến hành kiểm tra trên tâp test
+
+```{r}
+# Prediction on test-dataset
+predicted_outcomes_rf <- predict(potability_rf, testing)
+
+
+# Create Confusion Matrices
+rf_confm <- confusionMatrix(predicted_outcomes_rf, testing$Potability)
+
+rf_confm
+```
+
+
+- Dựa vào confusion Matrix chúng ta thấy tổng số dự đoán đúng của mô hình Random Forest khoảng hơn 660 trường hợp, dự đoán sai khoảng 150 trường hợp.
+- Và mô hình này cho độ chính xác khoảng hơn 81%
+
+## Kết luận:
+- Mô hình Random Forest là mô hình cho kết quả tốt nhất với độ chính xác khoảng 81% trong 3 mô hình mà nhóm em thử huấn luyện mô hình. 
+- Dù độ chính xác chưa cao lắm nhưng có thể dùng nó để khảo sát sàng lọc trước
+- Tiếp tục phát triển đề tài, nhóm em sẽ tiếp tục sử các phương pháp, độ đo khác cũng như thử nghiệm các mô hình khác để cải thiện mô hình dự đoán được chính xác hơn
+
+
+
+
+
+
+
+
+
+
+
+
